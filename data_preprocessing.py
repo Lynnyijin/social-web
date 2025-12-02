@@ -168,6 +168,7 @@ game_metadata = meta_df.set_index("appid").to_dict(orient="index")
 
 review_dfs = []
 for appid in game_appids:
+    print(f"Processing reviews for AppID: {appid}")
     df_app = ReviewFilteringHelper.preprocess(appid)
     review_dfs.append(df_app)
 
