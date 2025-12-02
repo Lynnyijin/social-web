@@ -1,5 +1,7 @@
 # The Social Web
+
 Course work for VU Amsterdam X_405086 The Social Web (2025)
+
 ## Steam Review Scraper
 
 A Python script to scrape English reviews from Steam community pages using Selenium.
@@ -19,8 +21,8 @@ A Python script to scrape English reviews from Steam community pages using Selen
 ## Requirements
 
 - Python 3.7+
-- Microsoft Edge browser installed
-- Edge WebDriver (automatically managed by Selenium 4.6+)
+- Microsoft Edge / Chrome browser installed
+- Edge / Chrome WebDriver (automatically managed by Selenium 4.6+)
 
 ## Installation
 
@@ -51,6 +53,7 @@ python data_scrape.py
 ```
 
 The script will:
+
 1. Open Edge browser and navigate to the Steam review page
 2. Automatically scroll to load more reviews
 3. Collect English reviews only
@@ -59,6 +62,7 @@ The script will:
 ## Output
 
 The CSV file contains the following columns:
+
 - ReviewId
 - SteamId
 - UserName
@@ -79,4 +83,3 @@ The CSV file contains the following columns:
 - Duplicate reviews are automatically skipped
 - The browser window will open during scraping (you can minimize it)
 - Progress messages are displayed in the console
-
