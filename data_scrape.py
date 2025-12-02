@@ -238,8 +238,9 @@ def save_to_csv(reviews, game_id):
         print("No reviews to save!")
         return
     
-    today = datetime.today().strftime('%Y%m%d')
-    filename = f'Steam_Reviews_{game_id}_{today}.csv'
+    # today = datetime.today().strftime('%Y%m%d')
+    # filename = f'Steam_Reviews_{game_id}_{today}.csv'
+    filename = f'Steam_Reviews_{game_id}.csv'
     
     fieldnames = [
         'ReviewId',
