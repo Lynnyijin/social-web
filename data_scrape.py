@@ -20,15 +20,23 @@ LANGUAGE_FILTER = 'english'
 MAX_SCROLL_ATTEMPTS = 1
 SCROLL_WAIT_TIME = 1.0
 PAGE_LOAD_WAIT = 2.0
+MAX_REVIEWS = 1000
 
 
-def create_driver():
-    """Create and configure Edge WebDriver"""
-    options = Options()
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--no-sandbox')
-    return webdriver.Edge(options=options)
+def create_driver(driver_type='edge'):
+    """Create and configure WebDriver"""
+    if driver_type == 'edge':
+        options = Options()
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--no-sandbox')
+        return webdriver.Edge(options=options)
+    elif driver_type == 'chrome':
+        options = webdriver.ChromeOptions()
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--no-sandbox')
+        return webdriver.Chrome(options=options)
 
 
 def get_review_url(game_id, review_type, language):
@@ -225,6 +233,9 @@ def scrape_reviews(driver, url):
         last_position, reached_end = scroll_to_load_more(driver, last_position)
         if reached_end:
             print(f"Reached end of page. Total reviews collected: {len(reviews)}")
+            running = False
+        elif len(reviews) >= MAX_REVIEWS:
+            print(f"Reached maximum review limit of {MAX_REVIEWS}. Stopping.")
             running = False
         else:
             print(f"Scrolled to position {last_position}, found {len(reviews)} reviews so far")
