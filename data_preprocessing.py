@@ -54,12 +54,13 @@ class ReviewFilteringHelper:
     def preprocess(cls):
         filename = f"steam_reviews_all_games.csv"
         df = pd.read_csv(filename, sep=";")
+        df["GlobalReviewId"] = pd.to_numeric(df["GlobalReviewId"], errors="coerce").fillna(0).astype(int)
         df["TotalReviewCount"] = (
             df["TotalReviewCount"]
             .astype(str)
             .str.replace(",", "", regex=False)
-            .astype(int)
         )
+        df["TotalReviewCount"] = pd.to_numeric(df["TotalReviewCount"], errors="coerce").fillna(0).astype(int)
         df = df[df["ReviewText"].fillna("").str.len() > 5]
         df = df[df["ReviewText"].apply(cls.is_english)]
         df = df.drop_duplicates(subset=["ReviewText"])
