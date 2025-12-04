@@ -11,15 +11,58 @@ import re
 from time import sleep
 from datetime import datetime
 import csv
+import argparse
+import json
+from typing import List, Dict, Any
+import requests
 
 
 # Configuration
-GAME_ID = 1172470
-REVIEW_TYPE = 'negativereviews'  # Options: 'negativereviews' or 'positivereviews'
 LANGUAGE_FILTER = 'english'
-MAX_SCROLL_ATTEMPTS = 1
+MAX_SCROLL_ATTEMPTS = 3
 SCROLL_WAIT_TIME = 1.0
 PAGE_LOAD_WAIT = 2.0
+MAX_SCROLLS_PER_GAME = 200
+DEFAULT_TARGET_POSITIVE = 500
+DEFAULT_TARGET_NEGATIVE = 500
+DEFAULT_OUTPUT_FILE = 'steam_reviews_all_games.csv'
+STORE_URL_TEMPLATE = 'https://store.steampowered.com/app/{game_id}/'
+
+
+# Default game configuration (can be overridden via CLI config file)
+DEFAULT_GAME_CONFIG: List[Dict[str, Any]] = [
+    # FPS
+    {"game_id": 1172470, "game_name": "Apex Legends", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 730, "game_name": "Counter-Strike 2", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 2807960, "game_name": "Battlefield 6", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 3606480, "game_name": "Call of Duty: Black Ops 7", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # RPG
+    {"game_id": 1245620, "game_name": "ELDEN RING", "genre": "RPG", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 990080, "game_name": "Hogwarts Legacy", "genre": "RPG", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 2161700, "game_name": "Persona 3 Reload", "genre": "RPG", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # Indie
+    {"game_id": 1426210, "game_name": "It Takes Two", "genre": "Indie", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 1030300, "game_name": "Hollow Knight: Silksong", "genre": "Indie", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 413150, "game_name": "Stardew Valley", "genre": "Indie", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # Strategy
+    {"game_id": 1466860, "game_name": "Age of Empires IV", "genre": "Strategy", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 289070, "game_name": "Sid Meier's Civilization VI", "genre": "Strategy", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 394360, "game_name": "Hearts of Iron IV", "genre": "Strategy", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # Simulation
+    {"game_id": 1222670, "game_name": "The Sims 4", "genre": "Simulation", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 2300320, "game_name": "Farming Simulator 25", "genre": "Simulation", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 270880, "game_name": "American Truck Simulator", "genre": "Simulation", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # MOBA
+    {"game_id": 570, "game_name": "Dota 2", "genre": "MOBA", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 2357570, "game_name": "Overwatch 2", "genre": "MOBA", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 1283700, "game_name": "SUPERVIVE", "genre": "MOBA", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # Co-op / Multiplayer
+    {"game_id": 3527290, "game_name": "PEAK", "genre": "Co-op / Multiplayer", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 550, "game_name": "Left 4 Dead 2", "genre": "Co-op / Multiplayer", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 648800, "game_name": "Raft", "genre": "Co-op / Multiplayer", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 2246340, "game_name": "Monster Hunter Wilds", "genre": "Co-op / Multiplayer", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    {"game_id": 2001120, "game_name": "Split Fiction", "genre": "Co-op / Multiplayer", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+]
 
 
 def create_driver():
@@ -31,11 +74,91 @@ def create_driver():
     return webdriver.Edge(options=options)
 
 
+def bypass_content_warning(driver):
+    """
+    Some games show a content warning / age gate on the community page.
+    Try to click the \"View Community Hub\" button so we can see reviews.
+    """
+    try:
+        # Prefer the known button class if present (works for <button> and <a>)
+        try:
+            button = driver.find_element(
+                By.CSS_SELECTOR, "button.btn_blue_steamui.btn_medium, a.btn_blue_steamui.btn_medium"
+            )
+        except NoSuchElementException:
+            # Fallback: look for the primary button with this label
+            button = driver.find_element(
+                By.XPATH,
+                "//*[contains(@class, 'btn_blue_steamui') and contains(., 'View Community Hub')]",
+            )
+
+        if button:
+            button.click()
+            sleep(PAGE_LOAD_WAIT)
+            print("Bypassed content warning by clicking 'View Community Hub'.")
+    except NoSuchElementException:
+        # No gate on this page – nothing to do
+        return
+    except Exception as exc:
+        print(f"Warning: Failed to bypass content warning: {exc}")
+
+
 def get_review_url(game_id, review_type, language):
     """Generate Steam review URL with language filter"""
     base_url = f'https://steamcommunity.com/app/{game_id}/{review_type}/'
     params = '?browsefilter=mostrecent&filterLanguage=' + language
     return base_url + params
+
+
+def fetch_game_metadata(game_id):
+    """Fetch overall review summary, review count, and tags from Steam store page"""
+    url = STORE_URL_TEMPLATE.format(game_id=game_id)
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        )
+    }
+    metadata = {
+        'overall_review_summary': '',
+        'total_review_count': '',
+        'store_tags': [],
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        html = response.text
+
+        summary_match = re.search(
+            r'class="game_review_summary.*?>(.*?)<', html, re.IGNORECASE | re.DOTALL
+        )
+        if summary_match:
+            metadata['overall_review_summary'] = summary_match.group(1).strip()
+
+        count_match = re.search(
+            r'responsive_reviewdesc">.*?\(([\d,]+)\)', html, re.IGNORECASE | re.DOTALL
+        )
+        if count_match:
+            metadata['total_review_count'] = count_match.group(1).strip()
+
+        tag_matches = re.findall(r'class="app_tag".*?>(.*?)<', html, re.IGNORECASE | re.DOTALL)
+        tags = [tag.strip() for tag in tag_matches if tag.strip()]
+        metadata['store_tags'] = tags[:10]  # limit to top 10 tags
+
+    except Exception as exc:
+        print(f"Warning: Could not fetch metadata for game {game_id}: {exc}")
+
+    return metadata
+
+
+def extract_helpful_votes(card):
+    """Extract helpful vote count from a review card"""
+    text = safe_find_element(card, './/div[contains(@class, "found_helpful")]', "")
+    if not text:
+        return 0
+    match = re.search(r'(\d+)', text.replace(',', ''))
+    return int(match.group(1)) if match else 0
 
 
 def safe_find_element(card, xpath, default=""):
@@ -127,7 +250,9 @@ def extract_review_data(card):
             review_id = review_id_match.group(1) if review_id_match else ""
         except NoSuchElementException:
             pass
-        
+
+        helpful_votes = extract_helpful_votes(card)
+
         return {
             'review_id': review_id,
             'steam_id': steam_id,
@@ -141,7 +266,8 @@ def extract_review_data(card):
             'play_hours': play_hours,
             'review_language': review_language,
             'date_posted': date_posted,
-            'review_url': review_url
+            'review_url': review_url,
+            'helpful_votes': helpful_votes,
         }
     except (NoSuchElementException, StaleElementReferenceException) as e:
         print(f"Error extracting review data: {e}")
@@ -171,19 +297,33 @@ def scroll_to_load_more(driver, last_position, max_attempts=MAX_SCROLL_ATTEMPTS)
     return None, True
 
 
-def scrape_reviews(driver, url):
-    """Main scraping function"""
+def scrape_reviews_for_game(driver, game, review_type, target_count, language=LANGUAGE_FILTER, game_metadata=None):
+    """
+    Scrape reviews for a single game and sentiment until target_count or page end.
+    review_type: 'positivereviews' or 'negativereviews'
+    """
+    game_id = game['game_id']
+    game_name = game.get('game_name', str(game_id))
+    genre = game.get('genre', '')
+    sentiment = 'positive' if review_type == 'positivereviews' else 'negative'
+
+    url = get_review_url(game_id, review_type, language)
+    print(f"\nScraping {sentiment} reviews for {game_name} (ID {game_id}) from: {url}")
+
     driver.get(url)
     sleep(PAGE_LOAD_WAIT)
+    # Some games show a content warning / age gate – try to skip it
+    bypass_content_warning(driver)
     driver.maximize_window()
     sleep(1)
-    
+
     reviews = []
     review_ids = set()
     last_position = driver.execute_script("return window.pageYOffset;")
     running = True
-    
-    while running:
+    scrolls = 0
+
+    while running and len(reviews) < target_count and scrolls < MAX_SCROLLS_PER_GAME:
         # Get all review cards on current page
         try:
             cards = driver.find_elements(By.CLASS_NAME, 'apphub_Card')
@@ -191,48 +331,244 @@ def scrape_reviews(driver, url):
         except Exception as e:
             print(f"Error finding cards: {e}")
             break
-        
+
         # Process each card
         for card in cards:
+            if len(reviews) >= target_count:
+                break
             try:
                 # Extract review data
                 review_data = extract_review_data(card)
                 if not review_data:
                     continue
-                
-                # Skip if already collected
-                if review_data['steam_id'] in review_ids:
+
+                # Skip if already collected (by review_id if possible, else steam_id)
+                unique_key = review_data['review_id'] or review_data['steam_id']
+                if unique_key in review_ids:
                     continue
-                
+
                 # Only collect English reviews
                 if not is_english_review(card):
                     print(f"Skipping non-English review from {review_data['user_name']}")
                     continue
-                
+
+                # Add game-level and sentiment info
+                metadata_fields = game_metadata or {}
+                review_data.update(
+                    {
+                        'game_id': game_id,
+                        'game_name': game_name,
+                        'genre': genre,
+                        'sentiment': sentiment,
+                        'overall_review_summary': metadata_fields.get('overall_review_summary', ''),
+                        'total_review_count': metadata_fields.get('total_review_count', ''),
+                        'store_tags': metadata_fields.get('store_tags', []),
+                    }
+                )
+
                 # Add to collection
-                review_ids.add(review_data['steam_id'])
+                review_ids.add(unique_key)
                 reviews.append(review_data)
-                print(f"Collected review {len(reviews)}: {review_data['user_name']} - {review_data['play_hours']} hours")
-                
+                print(
+                    f"Collected {len(reviews)}/{target_count} {sentiment} reviews for "
+                    f"{game_name}: {review_data['user_name']} - {review_data['play_hours']} hours"
+                )
+
             except StaleElementReferenceException:
                 print("Stale element, skipping card")
                 continue
             except Exception as e:
                 print(f"Error processing card: {e}")
                 continue
-        
+
         # Scroll to load more reviews
         last_position, reached_end = scroll_to_load_more(driver, last_position)
+        scrolls += 1
         if reached_end:
-            print(f"Reached end of page. Total reviews collected: {len(reviews)}")
+            print(
+                f"Reached end of page for {game_name} ({sentiment}). "
+                f"Total reviews collected: {len(reviews)}"
+            )
             running = False
         else:
-            print(f"Scrolled to position {last_position}, found {len(reviews)} reviews so far")
-    
+            print(
+                f"Scrolled to position {last_position}, "
+                f"found {len(reviews)} {sentiment} reviews so far for {game_name}"
+            )
+
+    if len(reviews) < target_count:
+        print(
+            f"Warning: Only collected {len(reviews)}/{target_count} {sentiment} reviews for {game_name}"
+        )
+    if scrolls >= MAX_SCROLLS_PER_GAME:
+        print(
+            f"Reached max scroll limit ({MAX_SCROLLS_PER_GAME}) for {game_name} "
+            f"while collecting {sentiment} reviews"
+        )
+
     return reviews
 
 
-def save_to_csv(reviews, game_id):
+def run_batch_scrape(
+    driver,
+    game_list,
+    language=LANGUAGE_FILTER,
+    writer=None,
+    start_index=1,
+):
+    """
+    Run scraping for all games and sentiments.
+
+    If writer is provided, rows are written to CSV in real time and we keep a
+    running GlobalReviewId starting from start_index.
+    """
+    all_reviews = []
+    global_id = start_index
+
+    for game in game_list:
+        positive_target = game.get('target_positive', DEFAULT_TARGET_POSITIVE)
+        negative_target = game.get('target_negative', DEFAULT_TARGET_NEGATIVE)
+        print(
+            f"\n=== Starting game {game.get('game_name', game['game_id'])} "
+            f"(positive target: {positive_target}, negative target: {negative_target}) ==="
+        )
+
+        metadata = fetch_game_metadata(game['game_id'])
+
+        # Positive reviews
+        if positive_target > 0:
+            try:
+                positive_reviews = scrape_reviews_for_game(
+                    driver,
+                    game,
+                    review_type='positivereviews',
+                    target_count=positive_target,
+                    language=language,
+                    game_metadata=metadata,
+                )
+                all_reviews.extend(positive_reviews)
+            except Exception as exc:
+                print(
+                    f"Error scraping positive reviews for {game.get('game_name')}: {exc}"
+                )
+
+        # Negative reviews
+        if negative_target > 0:
+            try:
+                negative_reviews = scrape_reviews_for_game(
+                    driver,
+                    game,
+                    review_type='negativereviews',
+                    target_count=negative_target,
+                    language=language,
+                    game_metadata=metadata,
+                )
+                all_reviews.extend(negative_reviews)
+            except Exception as exc:
+                print(
+                    f"Error scraping negative reviews for {game.get('game_name')}: {exc}"
+                )
+
+        print(
+            f"Finished {game.get('game_name', game['game_id'])}: "
+            f"{positive_target} positive, {negative_target} negative targets."
+        )
+
+        # If streaming to CSV, write as we go
+        if writer is not None:
+            for review in all_reviews:
+                writer.writerow({
+                    'GlobalReviewId': global_id,
+                    'GameId': review.get('game_id'),
+                    'GameName': review.get('game_name'),
+                    'Genre': review.get('genre'),
+                    'Sentiment': review.get('sentiment'),
+                    'ReviewId': review.get('review_id'),
+                    'SteamId': review['steam_id'],
+                    'UserName': review['user_name'],
+                    'ProfileURL': review['profile_url'],
+                    'ReviewText': review['review_content'],
+                    'ReviewLength_Chars': review['review_length_chars'],
+                    'ReviewLength_Words': review['review_length_words'],
+                    'IsRecommended': review['is_recommended'],
+                    'HelpfulVotes': review.get('helpful_votes'),
+                    'PlayHours_Text': review['play_hours_text'],
+                    'PlayHours_Numeric': review['play_hours'],
+                    'ReviewLanguage': review['review_language'],
+                    'DatePosted': review['date_posted'],
+                    'ReviewURL': review['review_url'],
+                    'OverallReviewSummary': review.get('overall_review_summary'),
+                    'TotalReviewCount': review.get('total_review_count'),
+                    'StoreTags': '|'.join(review.get('store_tags', [])) if review.get('store_tags') else '',
+                })
+                global_id += 1
+            # Clear memory – reviews are already on disk
+            all_reviews.clear()
+
+    return all_reviews, global_id
+
+
+def load_game_list(config_path, default_positive, default_negative):
+    """
+    Load game configuration list from JSON file or fallback to defaults.
+    Ensures target counts have sensible defaults.
+    """
+    if config_path:
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                raw_config = json.load(f)
+            print(f"Loaded game configuration from {config_path}")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to load config file {config_path}: {exc}") from exc
+    else:
+        raw_config = DEFAULT_GAME_CONFIG
+        print("Using built-in default game configuration")
+
+    normalized_config = []
+    for game in raw_config:
+        entry = {
+            'game_id': int(game['game_id']),
+            'game_name': game.get('game_name', str(game['game_id'])),
+            'genre': game.get('genre', 'Unknown'),
+            'target_positive': game.get('target_positive', default_positive),
+            'target_negative': game.get('target_negative', default_negative),
+        }
+        normalized_config.append(entry)
+
+    return normalized_config
+
+
+def parse_args():
+    """Parse command-line arguments"""
+    parser = argparse.ArgumentParser(description="Batch Steam review scraper")
+    parser.add_argument('--config', help='Path to JSON file containing game list', default=None)
+    parser.add_argument('--language', default=LANGUAGE_FILTER, help='Language filter for reviews')
+    parser.add_argument('--output', default=DEFAULT_OUTPUT_FILE, help='Output CSV filename')
+    parser.add_argument('--default-positive', type=int, default=DEFAULT_TARGET_POSITIVE,
+                        help='Default positive review target per game')
+    parser.add_argument('--default-negative', type=int, default=DEFAULT_TARGET_NEGATIVE,
+                        help='Default negative review target per game')
+    parser.add_argument('--max-scrolls-per-game', type=int, default=MAX_SCROLLS_PER_GAME,
+                        help='Safety cap on scroll iterations per game')
+    parser.add_argument('--max-scroll-attempts', type=int, default=MAX_SCROLL_ATTEMPTS,
+                        help='Attempts before assuming page end when scroll position is static')
+    parser.add_argument('--scroll-wait', type=float, default=SCROLL_WAIT_TIME,
+                        help='Wait (seconds) between scroll actions')
+    parser.add_argument('--page-wait', type=float, default=PAGE_LOAD_WAIT,
+                        help='Wait (seconds) after loading each page')
+    return parser.parse_args()
+
+
+def apply_runtime_overrides(args):
+    """Apply runtime configuration overrides from CLI arguments"""
+    global MAX_SCROLLS_PER_GAME, MAX_SCROLL_ATTEMPTS, SCROLL_WAIT_TIME, PAGE_LOAD_WAIT
+    MAX_SCROLLS_PER_GAME = args.max_scrolls_per_game
+    MAX_SCROLL_ATTEMPTS = args.max_scroll_attempts
+    SCROLL_WAIT_TIME = args.scroll_wait
+    PAGE_LOAD_WAIT = args.page_wait
+
+
+def save_to_csv(reviews, filename=DEFAULT_OUTPUT_FILE):
     """Save reviews to CSV file"""
     if not reviews:
         print("No reviews to save!")
@@ -240,9 +576,14 @@ def save_to_csv(reviews, game_id):
     
     # today = datetime.today().strftime('%Y%m%d')
     # filename = f'Steam_Reviews_{game_id}_{today}.csv'
-    filename = f'Steam_Reviews_{game_id}.csv'
+    # filename = f'Steam_Reviews_{game_id}.csv'
     
     fieldnames = [
+        'GlobalReviewId',
+        'GameId',
+        'GameName',
+        'Genre',
+        'Sentiment',
         'ReviewId',
         'SteamId',
         'UserName',
@@ -251,21 +592,34 @@ def save_to_csv(reviews, game_id):
         'ReviewLength_Chars',
         'ReviewLength_Words',
         'IsRecommended',
+        'HelpfulVotes',
         'PlayHours_Text',
         'PlayHours_Numeric',
         'ReviewLanguage',
         'DatePosted',
-        'ReviewURL'
+        'ReviewURL',
+        'OverallReviewSummary',
+        'TotalReviewCount',
+        'StoreTags',
     ]
     
     with open(filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames,
+            delimiter=';',
+        )
         writer.writeheader()
-        
+
         # Add sequential reviewID starting from 1
         for idx, review in enumerate(reviews, start=1):
             writer.writerow({
-                'ReviewId': idx,  # Sequential ID starting from 1
+                'GlobalReviewId': idx,
+                'GameId': review.get('game_id'),
+                'GameName': review.get('game_name'),
+                'Genre': review.get('genre'),
+                'Sentiment': review.get('sentiment'),
+                'ReviewId': review.get('review_id'),
                 'SteamId': review['steam_id'],
                 'UserName': review['user_name'],
                 'ProfileURL': review['profile_url'],
@@ -273,11 +627,15 @@ def save_to_csv(reviews, game_id):
                 'ReviewLength_Chars': review['review_length_chars'],
                 'ReviewLength_Words': review['review_length_words'],
                 'IsRecommended': review['is_recommended'],
+                'HelpfulVotes': review.get('helpful_votes'),
                 'PlayHours_Text': review['play_hours_text'],
                 'PlayHours_Numeric': review['play_hours'],
                 'ReviewLanguage': review['review_language'],
                 'DatePosted': review['date_posted'],
-                'ReviewURL': review['review_url']
+                'ReviewURL': review['review_url'],
+                'OverallReviewSummary': review.get('overall_review_summary'),
+                'TotalReviewCount': review.get('total_review_count'),
+                'StoreTags': '|'.join(review.get('store_tags', [])) if review.get('store_tags') else '',
             })
     
     print(f"\nTotal reviews collected: {len(reviews)}")
@@ -286,16 +644,59 @@ def save_to_csv(reviews, game_id):
 
 def main():
     """Main execution function"""
-    url = get_review_url(GAME_ID, REVIEW_TYPE, LANGUAGE_FILTER)
-    print(f"Scraping reviews from: {url}")
-    
-    driver = create_driver()
-    try:
-        reviews = scrape_reviews(driver, url)
-        save_to_csv(reviews, GAME_ID)
-    finally:
-        driver.close()
-        print("WebDriver closed.")
+    args = parse_args()
+    apply_runtime_overrides(args)
+
+    game_list = load_game_list(
+        args.config,
+        default_positive=args.default_positive,
+        default_negative=args.default_negative,
+    )
+
+    # Open CSV once and stream rows as we scrape so progress is never lost
+    fieldnames = [
+        'GlobalReviewId',
+        'GameId',
+        'GameName',
+        'Genre',
+        'Sentiment',
+        'ReviewId',
+        'SteamId',
+        'UserName',
+        'ProfileURL',
+        'ReviewText',
+        'ReviewLength_Chars',
+        'ReviewLength_Words',
+        'IsRecommended',
+        'HelpfulVotes',
+        'PlayHours_Text',
+        'PlayHours_Numeric',
+        'ReviewLanguage',
+        'DatePosted',
+        'ReviewURL',
+        'OverallReviewSummary',
+        'TotalReviewCount',
+        'StoreTags',
+    ]
+
+    with open(args.output, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
+        writer.writeheader()
+
+        driver = create_driver()
+        try:
+            # We ignore the returned list to keep memory low; data is on disk
+            _, final_id = run_batch_scrape(
+                driver,
+                game_list,
+                language=args.language,
+                writer=writer,
+                start_index=1,
+            )
+            print(f"\nStreaming write complete. Last GlobalReviewId: {final_id - 1}")
+        finally:
+            driver.quit()
+            print("WebDriver closed.")
 
 
 if __name__ == "__main__":
