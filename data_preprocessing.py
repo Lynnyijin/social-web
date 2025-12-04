@@ -35,14 +35,36 @@ class ReviewFilteringHelper:
         return text
     
     @classmethod
-    def preprocess(cls, appid):
-        filename = f"Steam_Reviews_{appid}.csv"
-        df = pd.read_csv(filename)
+    def clean_date(cls, text):
+        if pd.isna(text):
+            return None
+
+        # Example: 'Posted: 3 December'
+        text = text.replace("Posted:", "").strip()
+
+        # Try parsing "3 December"
+        try:
+            parsed = datetime.strptime(text, "%d %B")
+            parsed = parsed.replace(year=datetime.now().year)  # assume current year
+            return parsed.strftime("%Y-%m-%d")
+        except:
+            return None
+    
+    @classmethod
+    def preprocess(cls):
+        filename = f"steam_reviews_all_games.csv"
+        df = pd.read_csv(filename, sep=";")
+        df["TotalReviewCount"] = (
+            df["TotalReviewCount"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .astype(int)
+        )
         df = df[df["ReviewText"].fillna("").str.len() > 5]
         df = df[df["ReviewText"].apply(cls.is_english)]
         df = df.drop_duplicates(subset=["ReviewText"])
+        df["DatePosted"] = df["DatePosted"].apply(cls.clean_date)
         df["cleaned_text"] = df["ReviewText"].apply(cls.clean_text)
-        df["appid"] = appid
         return df
 
 
@@ -154,10 +176,10 @@ class ReviewMetadataHelper:
         
     @classmethod
     def create_preprocess_dataset(cls, df):
-        df["genre"] = df["appid"].apply(cls.map_genre)
-        df["popularity_bucket"] = df["appid"].apply(cls.map_popularity)
+        df["genre"] = df["GameId"].apply(cls.map_genre)
+        df["popularity_bucket"] = df["GameId"].apply(cls.map_popularity)
         df["release_phase"] = df.apply(
-            lambda row: cls.release_phase(row["appid"], row["DatePosted"]),
+            lambda row: cls.release_phase(row["GameId"], row["DatePosted"]),
             axis=1
         )
         df.to_csv("steam_reviews_cleaned.csv", index=False)
@@ -166,11 +188,5 @@ class ReviewMetadataHelper:
 meta_df = GameMetadataHelper.build_metadata_dataset()
 game_metadata = meta_df.set_index("appid").to_dict(orient="index")
 
-review_dfs = []
-for appid in game_appids:
-    print(f"Processing reviews for AppID: {appid}")
-    df_app = ReviewFilteringHelper.preprocess(appid)
-    review_dfs.append(df_app)
-
-df_all = pd.concat(review_dfs, ignore_index=True)
-ReviewMetadataHelper.create_preprocess_dataset(df_all)
+review_df = ReviewFilteringHelper.preprocess()
+ReviewMetadataHelper.create_preprocess_dataset(review_df)
