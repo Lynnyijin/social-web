@@ -20,19 +20,14 @@ class ReviewFilteringHelper:
             return False
 
     @classmethod
-    def remove_urls(cls, text):
-        return re.sub(r"http\S+|www\S+|https\S+", "", text, flags=re.MULTILINE)
-
-    @classmethod
-    def clean_whitespace(cls, text):
-        return re.sub(r"\s+", " ", text).strip()
-
-    @classmethod
-    def clean_text(cls, text):
-        text = text.lower()
-        text = cls.remove_urls(text)
-        text = cls.clean_whitespace(text)
-        return text
+    def parse_hours(cls, text):
+        if pd.isna(text):
+            return 0.0
+        # Example: "148.5 hrs on record"
+        value = re.findall(r"[\d\.]+", str(text))
+        if value:
+            return float(value[0])
+        return 0.0
     
     @classmethod
     def clean_date(cls, text):
@@ -40,15 +35,18 @@ class ReviewFilteringHelper:
             return None
 
         # Example: 'Posted: 3 December'
-        text = text.replace("Posted:", "").strip()
+        text = text.replace("Posted: ", "").strip()
 
         # Try parsing "3 December"
         try:
-            parsed = datetime.strptime(text, "%d %B")
-            parsed = parsed.replace(year=datetime.now().year)  # assume current year
-            return parsed.strftime("%Y-%m-%d")
-        except:
-            return None
+            parsed_date = datetime.strptime(text, '%B %d')
+        except ValueError:
+            try:
+                parsed_date = datetime.strptime(text, '%d %B')
+            except ValueError:
+                return None
+        parsed_date = parsed_date.replace(year=datetime.now().year)
+        return parsed_date.strftime("%Y-%m-%d")
     
     @classmethod
     def preprocess(cls):
@@ -64,8 +62,17 @@ class ReviewFilteringHelper:
         df = df[df["ReviewText"].fillna("").str.len() > 5]
         df = df[df["ReviewText"].apply(cls.is_english)]
         df = df.drop_duplicates(subset=["ReviewText"])
+        df["PlayHours"] = df["PlayHours_Text"].apply(cls.parse_hours)
         df["DatePosted"] = df["DatePosted"].apply(cls.clean_date)
-        df["cleaned_text"] = df["ReviewText"].apply(cls.clean_text)
+
+        columns_to_drop = [
+            "SteamId", "UserName", "ProfileURL", "ReviewURL",
+            "GameName", "ReviewId",
+            "ReviewLength_Chars", "ReviewLength_Words",
+            "PlayHours_Text", "ReviewLanguage",
+            "OverallReviewSummary", "StoreTags"
+        ]
+        df = df.drop(columns=[c for c in columns_to_drop if c in df.columns])
         return df
 
 
@@ -77,8 +84,6 @@ class GameMetadataHelper:
         
         data = res[str(appid)]["data"]
         name = data.get("name", "Unknown")
-        genres = [g["description"] for g in data.get("genres", [])]
-        categories = [c["description"] for c in data.get("categories", [])]
         recommendations = data.get("recommendations", {}).get("total", 0)
         release_raw = data.get("release_date", {}).get("date", "")
         release_date = None
@@ -90,8 +95,6 @@ class GameMetadataHelper:
         return {
             "appid": appid,
             "name": name,
-            "genres": genres,
-            "categories": categories,
             "recommendations_total": recommendations,
             "release_date": release_date
         }
@@ -149,13 +152,6 @@ class GameMetadataHelper:
 
 class ReviewMetadataHelper:
     @classmethod
-    def map_genre(cls, appid):
-        genres = game_metadata.get(appid, {}).get("genres", ["Unknown"])
-        if isinstance(genres, list) and genres:
-            return genres[0]
-        return "Unknown"
-
-    @classmethod
     def map_popularity(cls, appid):
         return game_metadata.get(appid, {}).get("popularity_bucket", "Unknown")
 
@@ -177,7 +173,6 @@ class ReviewMetadataHelper:
         
     @classmethod
     def create_preprocess_dataset(cls, df):
-        df["genre"] = df["GameId"].apply(cls.map_genre)
         df["popularity_bucket"] = df["GameId"].apply(cls.map_popularity)
         df["release_phase"] = df.apply(
             lambda row: cls.release_phase(row["GameId"], row["DatePosted"]),
