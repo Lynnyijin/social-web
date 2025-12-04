@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from detoxify import Detoxify
+from datetime import datetime
 
 def analyze_csv_with_detoxify(path, model_name="original"):
     df = pd.read_csv(path)
@@ -13,6 +14,27 @@ def analyze_csv_with_detoxify(path, model_name="original"):
     for key in scores:
         df[key] = scores[key]
 
+    return df
+
+def parse_review_post_date(df):
+    date_posted = df["DatePosted"].astype(str).tolist()
+    date_posted_datetime = []
+    # Parse review date to standard format if possible
+    # Date format on Steam is usually like "Posted: December 1" or "Posted: 1 December"
+    # Assume current year if year not provided
+    for date in date_posted:
+        try:
+            parsed_date = datetime.strptime(date.replace('Posted: ', '').strip(), '%B %d')
+            parsed_date = parsed_date.replace(year=datetime.now().year)
+            date_posted_datetime.append(parsed_date.strftime('%Y-%m-%d'))
+        except ValueError:
+            try:
+                parsed_date = datetime.strptime(date.replace('Posted: ', '').strip(), '%d %B')
+                parsed_date = parsed_date.replace(year=datetime.now().year)
+                date_posted_datetime.append(parsed_date.strftime('%Y-%m-%d'))
+            except ValueError:
+                date_posted_datetime.append(None)
+    df["DatePosted_Datetime"] = date_posted_datetime
     return df
 
 def get_positive_reviews(df):
@@ -69,11 +91,39 @@ def plot_toxicity_by_recommendation(df):
     plt.ylabel("Toxicity Score")
     plt.show()
 
+def plot_toxicity_over_time(df):
+    df = parse_review_post_date(df)
+    df["DatePosted_Datetime"] = pd.to_datetime(df["DatePosted_Datetime"], errors="coerce")
+    daily = df.groupby(df["DatePosted_Datetime"].dt.date)["toxicity"].mean()
+
+    plt.figure(figsize=(12,6))
+    daily.plot()
+    plt.title("Average Toxicity Over Time")
+    plt.xlabel("Date")
+    plt.ylabel("Avg Toxicity")
+    plt.xticks(rotation=45)
+    plt.show()
+
+def plot_toxicity_vs_playtime(df):
+    plt.figure(figsize=(8,6))
+    sns.scatterplot(
+        x="PlayHours_Numeric",
+        y="toxicity",
+        data=df,
+        alpha=0.5
+    )
+    plt.title("Toxicity vs Playtime")
+    plt.xlabel("Play Time (hours)")
+    plt.ylabel("Toxicity")
+    plt.show()
+
 if __name__ == "__main__":
-    df = analyze_csv_with_detoxify('Steam_Reviews_1172470_20251202(1).csv')
+    df = analyze_csv_with_detoxify('steam_reviews_cleaned.csv')
     positive_count, negative_count = get_positive_negative_count(df)
     print(f"Positive Reviews: {positive_count}, Negative Reviews: {negative_count}")
     plot_toxicity_distribution(df)
     plot_toxicity_correlation(df)
     plot_toxicity_vs_length(df)
     plot_toxicity_by_recommendation(df)
+    plot_toxicity_over_time(df)
+    plot_toxicity_vs_playtime(df)
