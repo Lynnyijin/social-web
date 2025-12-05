@@ -3,17 +3,31 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from detoxify import Detoxify
 from datetime import datetime
+from tqdm import tqdm
 
 def analyze_csv_with_detoxify(path, model_name="original"):
     df = pd.read_csv(path)
     model = Detoxify(model_name)
     reviews = df["ReviewText"].astype(str).tolist()
-    scores = model.predict(reviews) # Returns dictionary with keys ("toxicity", "severe_toxicity", "obscene", "threat", "insult", "identity_attack")
+    # Divide reviews into batches to avoid memory issues
+    batch_size = 128
+    scores = {
+        "toxicity": [],
+        "severe_toxicity": [],
+        "obscene": [],
+        "threat": [],
+        "insult": [],
+        "identity_attack": []
+    }
+    for i in tqdm(range(0, len(reviews), batch_size), desc="Analyzing toxicity"):
+        batch_reviews = reviews[i:i+batch_size]
+        batch_scores = model.predict(batch_reviews)
+        for key in scores:
+            scores[key].extend(batch_scores[key])
 
-    # Merge each score into dataframe
+    # Add scores to dataframe
     for key in scores:
         df[key] = scores[key]
-
     return df
 
 def parse_review_post_date(df):
@@ -119,11 +133,5 @@ def plot_toxicity_vs_playtime(df):
 
 if __name__ == "__main__":
     df = analyze_csv_with_detoxify('steam_reviews_cleaned.csv')
-    positive_count, negative_count = get_positive_negative_count(df)
-    print(f"Positive Reviews: {positive_count}, Negative Reviews: {negative_count}")
-    plot_toxicity_distribution(df)
-    plot_toxicity_correlation(df)
-    plot_toxicity_vs_length(df)
-    plot_toxicity_by_recommendation(df)
-    plot_toxicity_over_time(df)
-    plot_toxicity_vs_playtime(df)
+    # Save the new df with toxicity scores into a new CSV
+    df.to_csv('steam_reviews_with_toxicity.csv', index=False)
