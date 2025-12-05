@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 import re
 import requests
@@ -6,7 +7,40 @@ from langdetect import detect
 from datetime import datetime
 
 
-game_appids = [1172470]
+DEFAULT_GAME_CONFIG = [
+    # FPS
+    { "game_id": 1172470, "game_name": "Apex Legends", "genre": "FPS" },
+    { "game_id": 730, "game_name": "Counter-Strike 2", "genre": "FPS" },
+    { "game_id": 2807960, "game_name": "Battlefield 6", "genre": "FPS" },
+    { "game_id": 3606480, "game_name": "Call of Duty: Black Ops 7", "genre": "FPS" },
+    # RPG
+    { "game_id": 1245620, "game_name": "ELDEN RING", "genre": "RPG" },
+    { "game_id": 990080, "game_name": "Hogwarts Legacy", "genre": "RPG" },
+    { "game_id": 2161700, "game_name": "Persona 3 Reload", "genre": "RPG" },
+    # Indie
+    { "game_id": 1426210, "game_name": "It Takes Two", "genre": "Indie" },
+    { "game_id": 1030300, "game_name": "Hollow Knight: Silksong", "genre": "Indie" },
+    { "game_id": 413150, "game_name": "Stardew Valley", "genre": "Indie" },
+    # Strategy
+    { "game_id": 1466860, "game_name": "Age of Empires IV", "genre": "Strategy" },
+    { "game_id": 289070, "game_name": "Sid Meier's Civilization VI", "genre": "Strategy" },
+    { "game_id": 394360, "game_name": "Hearts of Iron IV", "genre": "Strategy" },
+    # Simulation
+    { "game_id": 1222670, "game_name": "The Sims 4", "genre": "Simulation" },
+    { "game_id": 2300320, "game_name": "Farming Simulator 25", "genre": "Simulation" },
+    { "game_id": 270880, "game_name": "American Truck Simulator", "genre": "Simulation" },
+    # MOBA
+    { "game_id": 570, "game_name": "Dota 2", "genre": "MOBA" },
+    { "game_id": 2357570, "game_name": "Overwatch 2", "genre": "MOBA" },
+    { "game_id": 1283700, "game_name": "SUPERVIVE", "genre": "MOBA" },
+    # Co-op / Multiplayer
+    { "game_id": 3527290, "game_name": "PEAK", "genre": "Co-op / Multiplayer" },
+    { "game_id": 550, "game_name": "Left 4 Dead 2", "genre": "Co-op / Multiplayer" },
+    { "game_id": 648800, "game_name": "Raft", "genre": "Co-op / Multiplayer" },
+    { "game_id": 2246340, "game_name": "Monster Hunter Wilds", "genre": "Co-op / Multiplayer" },
+    { "game_id": 2001120, "game_name": "Split Fiction", "genre": "Co-op / Multiplayer" },
+]
+game_appids = [config["game_id"] for config in DEFAULT_GAME_CONFIG]
 game_metadata = {}
 
 
@@ -32,7 +66,7 @@ class ReviewFilteringHelper:
     @classmethod
     def clean_date(cls, text):
         if pd.isna(text):
-            return None
+            return datetime.today().strftime("%Y-%m-%d")
 
         # Example: 'Posted: 3 December'
         text = text.replace("Posted: ", "").strip()
@@ -44,7 +78,7 @@ class ReviewFilteringHelper:
             try:
                 parsed_date = datetime.strptime(text, '%d %B')
             except ValueError:
-                return None
+                return datetime.today().strftime("%Y-%m-%d")
         parsed_date = parsed_date.replace(year=datetime.now().year)
         return parsed_date.strftime("%Y-%m-%d")
     
@@ -78,6 +112,38 @@ class ReviewFilteringHelper:
 
 class GameMetadataHelper:
     @classmethod
+    def parse_release_date(cls, release_date):
+        if not release_date or str(release_date).strip() == "":
+            return None
+
+        release_date = str(release_date).strip()
+
+        # Clean localized formats like "jun." → "jun"
+        release_date = release_date.replace(".", "")
+
+        # Try known formats
+        possible_formats = [
+            "%d %b, %Y",      # 4 Nov, 2020
+            "%d %B, %Y",      # 4 November, 2020
+            "%d/%b/%Y",       # 18/jun/2020
+            "%d/%B/%Y",       # 18/June/2020
+            "%d/%m/%Y",       # 18/06/2020
+            "%Y-%m-%d",       # 2020-06-18
+            "%d %b %Y",       # 4 Nov 2020
+            "%d %B %Y",       # 4 November 2020
+        ]
+
+        for fmt in possible_formats:
+            try:
+                parsed = datetime.strptime(release_date, fmt)
+                return parsed.strftime("%Y-%m-%d")
+            except:
+                continue
+
+        # If everything fails: return None (unknown format)
+        return None
+
+    @classmethod
     def parse_steam_metadata(cls, appid):
         url = f"https://store.steampowered.com/api/appdetails?appids={appid}"
         res = requests.get(url).json()
@@ -86,23 +152,20 @@ class GameMetadataHelper:
         name = data.get("name", "Unknown")
         recommendations = data.get("recommendations", {}).get("total", 0)
         release_raw = data.get("release_date", {}).get("date", "")
-        release_date = None
-        try:
-            release_date = datetime.strptime(release_raw, "%d %b, %Y").strftime("%Y-%m-%d")
-        except:
-            release_date = None
 
         return {
             "appid": appid,
             "name": name,
             "recommendations_total": recommendations,
-            "release_date": release_date
+            "release_date": cls.parse_release_date(release_raw)
         }
     
     @classmethod
     def parse_steamspy(cls, appid):
         url = f"https://steamspy.com/api.php?request=appdetails&appid={appid}"
-        res = requests.get(url).json()
+        response = requests.get(url)
+        res = response.content.decode("utf-8-sig")
+        res = json.loads(res)
         
         low, high = res["owners"].replace(",", "").split(" .. ")
         owners_low = int(low)
@@ -120,7 +183,6 @@ class GameMetadataHelper:
         
         return {
             "appid": appid,
-            "tags": list(res.get("tags", {}).keys()),
             "owners_est": owners_est,
             "owners_low": owners_low,
             "owners_high": owners_high,
