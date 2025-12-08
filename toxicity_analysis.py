@@ -199,6 +199,7 @@ if __name__ == "__main__":
     # df.to_csv('steam_reviews_with_toxicity.csv', index=False)
 
     df = pd.read_csv('steam_reviews_with_toxicity.csv')
+    df = df[df["GameId"] != 3606480]
     
     plot_toxicity_distribution(df, score="toxicity")
     plot_toxicity_correlation(df)

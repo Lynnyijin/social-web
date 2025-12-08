@@ -35,7 +35,7 @@ DEFAULT_GAME_CONFIG: List[Dict[str, Any]] = [
     {"game_id": 1172470, "game_name": "Apex Legends", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
     {"game_id": 730, "game_name": "Counter-Strike 2", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
     {"game_id": 2807960, "game_name": "Battlefield 6", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
-    {"game_id": 3606480, "game_name": "Call of Duty: Black Ops 7", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
+    # {"game_id": 3606480, "game_name": "Call of Duty: Black Ops 7", "genre": "FPS", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
     # RPG
     {"game_id": 1245620, "game_name": "ELDEN RING", "genre": "RPG", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
     {"game_id": 990080, "game_name": "Hogwarts Legacy", "genre": "RPG", "target_positive": DEFAULT_TARGET_POSITIVE, "target_negative": DEFAULT_TARGET_NEGATIVE},
