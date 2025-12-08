@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -122,7 +123,7 @@ def plot_toxicity_by_genre(df):
 
 def plot_toxicity_by_popularity(df):
     plt.figure(figsize=(10,6))
-    sns.boxplot(x="popularity_bucket", y="toxicity", data=df, showfliers=False)
+    sns.boxplot(x="popularity_bucket", y="toxicity", data=df, order=["Very High", "High", "Medium", "Low"], showfliers=False)
     plt.title("Toxicity by Popularity Bucket")
     plt.xticks(rotation=45)
     plt.show()
@@ -148,11 +149,6 @@ def wordcloud_by_toxicity(df, score="toxicity", threshold=0.5):
     plt.show()
 
 def plot_toxicity_binned_by_recommendation(df, bin_size=0.2):
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
     # Create toxicity bins
     bins = np.arange(0, 1 + bin_size, bin_size)
     labels = [f"{round(bins[i],2)}–{round(bins[i+1],2)}" for i in range(len(bins)-1)]
