@@ -2,35 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from detoxify import Detoxify
 from datetime import datetime
-from tqdm import tqdm
 from wordcloud import WordCloud
-
-def analyze_csv_with_detoxify(path, model_name="original"):
-    df = pd.read_csv(path)
-    model = Detoxify(model_name)
-    reviews = df["ReviewText"].astype(str).tolist()
-    # Divide reviews into batches to avoid memory issues
-    batch_size = 128
-    scores = {
-        "toxicity": [],
-        "severe_toxicity": [],
-        "obscene": [],
-        "threat": [],
-        "insult": [],
-        "identity_attack": []
-    }
-    for i in tqdm(range(0, len(reviews), batch_size), desc="Analyzing toxicity"):
-        batch_reviews = reviews[i:i+batch_size]
-        batch_scores = model.predict(batch_reviews)
-        for key in scores:
-            scores[key].extend(batch_scores[key])
-
-    # Add scores to dataframe
-    for key in scores:
-        df[key] = scores[key]
-    return df
 
 def parse_review_post_date(df):
     date_posted = df["DatePosted"].astype(str).tolist()
@@ -183,21 +156,7 @@ def plot_toxicity_binned_by_recommendation(df, bin_size=0.2):
     plt.tight_layout()
     plt.show()
 
-# def plot_toxicity_trend(df):
-#     df["DatePosted"] = pd.to_datetime(df["DatePosted"])
-#     daily = df.groupby(df["DatePosted"].dt.date)["toxicity"].mean()
-
-#     plt.figure(figsize=(12,5))
-#     plt.plot(daily.index, daily.values)
-#     plt.title("Average Toxicity Over Time")
-#     plt.xlabel("Date")
-#     plt.ylabel("Toxicity")
-#     plt.show()
-
 if __name__ == "__main__":
-    # df = analyze_csv_with_detoxify('steam_reviews_cleaned.csv')
-    # df.to_csv('steam_reviews_with_toxicity.csv', index=False)
-
     df = pd.read_csv('steam_reviews_with_toxicity.csv')
     df = df[df["GameId"] != 3606480]
     
