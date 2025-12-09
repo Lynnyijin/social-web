@@ -12,7 +12,7 @@ DEFAULT_GAME_CONFIG = [
     { "game_id": 1172470, "game_name": "Apex Legends", "genre": "FPS" },
     { "game_id": 730, "game_name": "Counter-Strike 2", "genre": "FPS" },
     { "game_id": 2807960, "game_name": "Battlefield 6", "genre": "FPS" },
-    { "game_id": 3606480, "game_name": "Call of Duty: Black Ops 7", "genre": "FPS" },
+    # { "game_id": 3606480, "game_name": "Call of Duty: Black Ops 7", "genre": "FPS" },
     # RPG
     { "game_id": 1245620, "game_name": "ELDEN RING", "genre": "RPG" },
     { "game_id": 990080, "game_name": "Hogwarts Legacy", "genre": "RPG" },

@@ -4,27 +4,102 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from wordcloud import WordCloud
+from scipy.stats import kruskal, mannwhitneyu
+import scikit_posthocs as sp
 
-def parse_review_post_date(df):
-    date_posted = df["DatePosted"].astype(str).tolist()
-    date_posted_datetime = []
-    # Parse review date to standard format if possible
-    # Date format on Steam is usually like "Posted: December 1" or "Posted: 1 December"
-    # Assume current year if year not provided
-    for date in date_posted:
-        try:
-            parsed_date = datetime.strptime(date.replace('Posted: ', '').strip(), '%B %d')
-            parsed_date = parsed_date.replace(year=datetime.now().year)
-            date_posted_datetime.append(parsed_date.strftime('%Y-%m-%d'))
-        except ValueError:
-            try:
-                parsed_date = datetime.strptime(date.replace('Posted: ', '').strip(), '%d %B')
-                parsed_date = parsed_date.replace(year=datetime.now().year)
-                date_posted_datetime.append(parsed_date.strftime('%Y-%m-%d'))
-            except ValueError:
-                date_posted_datetime.append(None)
-    df["DatePosted"] = date_posted_datetime
+GENRES = ['FPS', 'RPG', 'Indie', 'Strategy', 'Simulation', 'MOBA', 'Multiplayer']
+POPULARITY_BUCKETS = ['Low', 'Medium', 'High', 'Very High']
+
+def process_df(df):
+    # Remove Specific Game ID
+    df = df[df["GameId"] != 3606480]
+    df = df.dropna(subset=['toxicity'])
     return df
+
+def print_header(title):
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
+
+def kw_across_genres(df):
+    print_header("RQ1a: Toxicity Across Game Genres (Kruskal–Wallis)")
+
+    genre_groups = []
+    labels_used = []
+
+    for genre in GENRES:
+        values = df.loc[df['Genre'] == genre, 'toxicity'].dropna()
+        if len(values) > 0:
+            genre_groups.append(values)
+            labels_used.append(genre)
+            print(f"Genre {genre}: n = {len(values)}")
+
+    if len(genre_groups) >= 2:
+        H_stat, p_value = kruskal(*genre_groups)
+        print(f"\nKruskal–Wallis H = {H_stat:.4f}, p = {p_value:.4e}")
+    else:
+        print("Not enough non-empty genre groups to run Kruskal–Wallis.")
+
+    # Optional Dunn post-hoc test (pairwise between genres)
+    if len(genre_groups) >= 2:
+        print("\nDunn post-hoc test between genres (Bonferroni corrected p-values):")
+        dunn_genre = sp.posthoc_dunn(
+            df[['Genre', 'toxicity']],
+            val_col='toxicity',
+            group_col='Genre',
+            p_adjust='bonferroni'
+        )
+        print(dunn_genre.loc[labels_used, labels_used])
+
+def kw_across_popularity(df):
+    print_header("RQ1b: Toxicity Across Popularity Buckets (Kruskal–Wallis)")
+
+    pop_groups = []
+    pop_labels_used = []
+
+    for b in POPULARITY_BUCKETS:
+        values = df.loc[df['popularity_bucket'] == b, 'toxicity'].dropna()
+        if len(values) > 0:
+            pop_groups.append(values)
+            pop_labels_used.append(b)
+            print(f"Bucket {b}: n = {len(values)}")
+
+    if len(pop_groups) >= 2:
+        H_stat_pop, p_value_pop = kruskal(*pop_groups)
+        print(f"\nKruskal–Wallis H = {H_stat_pop:.4f}, p = {p_value_pop:.4e}")
+    else:
+        print("Not enough non-empty popularity groups to run Kruskal–Wallis.")
+
+    # Optional Dunn post-hoc test
+    if len(pop_groups) >= 2:
+        print("\nDunn post-hoc test between popularity buckets (Bonferroni corrected p-values):")
+        dunn_pop = sp.posthoc_dunn(
+            df[['popularity_bucket', 'toxicity']],
+            val_col='toxicity',
+            group_col='popularity_bucket',
+            p_adjust='bonferroni'
+        )
+        print(dunn_pop.loc[pop_labels_used, pop_labels_used])
+
+def mw_recommended_vs_not(df):
+    print_header("RQ2a: Toxicity by Recommendation Status (Mann–Whitney U)")
+
+    rec_true = df[df['IsRecommended'] == True]['toxicity'].dropna()
+    rec_false = df[df['IsRecommended'] == False]['toxicity'].dropna()
+
+    print(f"Recommended (True): n = {len(rec_true)}")
+    print(f"Not recommended (False): n = {len(rec_false)}")
+
+    if len(rec_true) > 0 and len(rec_false) > 0:
+        U_stat, p_value_u = mannwhitneyu(rec_true, rec_false, alternative='two-sided')
+        print(f"\nMann–Whitney U = {U_stat:.4f}, p = {p_value_u:.4e}")
+
+        # Optional: compute rank-biserial effect size
+        n1, n2 = len(rec_true), len(rec_false)
+        rank_biserial = 1 - (2 * U_stat) / (n1 * n2)
+        print(f"Approx. rank-biserial effect size r_rb = {rank_biserial:.4f}")
+    else:
+        print("Not enough data in one or both groups for Mann–Whitney U.")
 
 # Plotting functions
 def plot_toxicity_distribution(df, score="toxicity"):
@@ -158,7 +233,11 @@ def plot_toxicity_binned_by_recommendation(df, bin_size=0.2):
 
 if __name__ == "__main__":
     df = pd.read_csv('steam_reviews_with_toxicity.csv')
-    df = df[df["GameId"] != 3606480]
+    df = process_df(df)
+
+    kw_across_genres(df)
+    kw_across_popularity(df)
+    mw_recommended_vs_not(df)
     
     plot_toxicity_distribution(df, score="toxicity")
     plot_toxicity_correlation(df)
