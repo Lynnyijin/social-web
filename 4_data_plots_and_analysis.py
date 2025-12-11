@@ -7,7 +7,7 @@ from wordcloud import WordCloud
 from scipy.stats import kruskal, mannwhitneyu
 import scikit_posthocs as sp
 
-GENRES = ['FPS', 'RPG', 'Indie', 'Strategy', 'Simulation', 'MOBA', 'Multiplayer']
+GENRES = ['FPS', 'RPG', 'Indie', 'Strategy', 'Simulation', 'MOBA', 'Co-op / Multiplayer']
 POPULARITY_BUCKETS = ['Low', 'Medium', 'High', 'Very High']
 
 def process_df(df):
@@ -20,6 +20,19 @@ def print_header(title):
     print("\n" + "=" * 80)
     print(title)
     print("=" * 80)
+
+def describe_across_genres(df):
+    print_header("Descriptive Statistics Across Game Genres")
+
+    for genre in GENRES:
+        values = df.loc[df['Genre'] == genre, 'toxicity'].dropna()
+        if len(values) > 0:
+            mean_val = np.mean(values)
+            median_val = np.median(values)
+            variance_val = np.var(values)
+            print(f"Genre {genre}: n = {len(values)}, Mean = {mean_val:.4f}, Median = {median_val:.4f}, Variance = {variance_val:.4f}")
+        else:
+            print(f"Genre {genre}: No data available.")
 
 def kw_across_genres(df):
     print_header("RQ1a: Toxicity Across Game Genres (Kruskal–Wallis)")
@@ -51,6 +64,19 @@ def kw_across_genres(df):
         )
         print(dunn_genre.loc[labels_used, labels_used])
 
+def describe_across_popularity(df):
+    print_header("Descriptive Statistics Across Popularity Buckets")
+
+    for b in POPULARITY_BUCKETS:
+        values = df.loc[df['popularity_bucket'] == b, 'toxicity'].dropna()
+        if len(values) > 0:
+            mean_val = np.mean(values)
+            median_val = np.median(values)
+            variance_val = np.var(values)
+            print(f"Bucket {b}: n = {len(values)}, Mean = {mean_val:.4f}, Median = {median_val:.4f}, Variance = {variance_val:.4f}")
+        else:
+            print(f"Bucket {b}: No data available.")
+
 def kw_across_popularity(df):
     print_header("RQ1b: Toxicity Across Popularity Buckets (Kruskal–Wallis)")
 
@@ -80,6 +106,19 @@ def kw_across_popularity(df):
             p_adjust='bonferroni'
         )
         print(dunn_pop.loc[pop_labels_used, pop_labels_used])
+
+def describe_recommendation(df):
+    print_header("Descriptive Statistics by Recommendation Status")
+
+    for rec_status in [True, False]:
+        values = df.loc[df['IsRecommended'] == rec_status, 'toxicity'].dropna()
+        if len(values) > 0:
+            mean_val = np.mean(values)
+            median_val = np.median(values)
+            variance_val = np.var(values)
+            print(f"IsRecommended = {rec_status}: n = {len(values)}, Mean = {mean_val:.4f}, Median = {median_val:.4f}, Variance = {variance_val:.4f}")
+        else:
+            print(f"IsRecommended = {rec_status}: No data available.")
 
 def mw_recommended_vs_not(df):
     print_header("RQ2a: Toxicity by Recommendation Status (Mann–Whitney U)")
@@ -235,17 +274,20 @@ if __name__ == "__main__":
     df = pd.read_csv('steam_reviews_with_toxicity.csv')
     df = process_df(df)
 
+    describe_across_genres(df)
     kw_across_genres(df)
+    describe_across_popularity(df)
     kw_across_popularity(df)
+    describe_recommendation(df)
     mw_recommended_vs_not(df)
     
-    plot_toxicity_distribution(df, score="toxicity")
-    plot_toxicity_correlation(df)
-    plot_toxicity_vs_length(df)
-    plot_toxicity_by_recommendation(df)
-    plot_toxicity_binned_by_recommendation(df)
-    plot_toxicity_vs_playtime(df)
-    plot_toxicity_by_genre(df)
-    plot_toxicity_by_popularity(df)
-    plot_helpfulvotes_vs_toxicity(df)
-    wordcloud_by_toxicity(df, score="toxicity", threshold=0.5)
+    # plot_toxicity_distribution(df, score="toxicity")
+    # plot_toxicity_correlation(df)
+    # plot_toxicity_vs_length(df)
+    # plot_toxicity_by_recommendation(df)
+    # plot_toxicity_binned_by_recommendation(df)
+    # plot_toxicity_vs_playtime(df)
+    # plot_toxicity_by_genre(df)
+    # plot_toxicity_by_popularity(df)
+    # plot_helpfulvotes_vs_toxicity(df)
+    # wordcloud_by_toxicity(df, score="toxicity", threshold=0.5)
