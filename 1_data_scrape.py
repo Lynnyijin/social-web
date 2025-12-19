@@ -205,12 +205,6 @@ def is_english_review(card):
 def extract_review_data(card):
     """Extract all data from a review card"""
     try:
-        # Get profile link element (used for both URL and username)
-        profile_link = card.find_element(By.XPATH, './/div[@class="apphub_friend_block"]/div/a[2]')
-        profile_url = profile_link.get_attribute('href')
-        steam_id = profile_url.split('/')[-2]
-        user_name = profile_link.text or "Unknown"
-        
         # Extract date and review content
         date_posted = safe_find_element(card, './/div[@class="apphub_CardTextContent"]/div', "")
         review_content_elem = card.find_element(By.XPATH, './/div[@class="apphub_CardTextContent"]')
@@ -239,25 +233,10 @@ def extract_review_data(card):
         
         # Extract review language
         review_language = safe_find_element(card, './/div[contains(@class, "language")]', "")
-        
-        # Extract review ID and URL
-        review_id = ""
-        review_url = ""
-        try:
-            review_link = card.find_element(By.XPATH, './/a[contains(@href, "recommended")]')
-            review_url = review_link.get_attribute('href')
-            review_id_match = re.search(r'recommended/(\d+)', review_url)
-            review_id = review_id_match.group(1) if review_id_match else ""
-        except NoSuchElementException:
-            pass
 
         helpful_votes = extract_helpful_votes(card)
 
         return {
-            'review_id': review_id,
-            'steam_id': steam_id,
-            'user_name': user_name,
-            'profile_url': profile_url,
             'review_content': review_content,
             'review_length_chars': review_length_chars,
             'review_length_words': review_length_words,
@@ -266,7 +245,6 @@ def extract_review_data(card):
             'play_hours': play_hours,
             'review_language': review_language,
             'date_posted': date_posted,
-            'review_url': review_url,
             'helpful_votes': helpful_votes,
         }
     except (NoSuchElementException, StaleElementReferenceException) as e:
@@ -342,14 +320,14 @@ def scrape_reviews_for_game(driver, game, review_type, target_count, language=LA
                 if not review_data:
                     continue
 
-                # Skip if already collected (by review_id if possible, else steam_id)
-                unique_key = review_data['review_id'] or review_data['steam_id']
+                # Skip duplicates using review content hash
+                unique_key = hash(review_data['review_content'][:100])
                 if unique_key in review_ids:
                     continue
 
                 # Only collect English reviews
                 if not is_english_review(card):
-                    print(f"Skipping non-English review from {review_data['user_name']}")
+                    print(f"Skipping non-English review")
                     continue
 
                 # Add game-level and sentiment info
@@ -371,7 +349,7 @@ def scrape_reviews_for_game(driver, game, review_type, target_count, language=LA
                 reviews.append(review_data)
                 print(
                     f"Collected {len(reviews)}/{target_count} {sentiment} reviews for "
-                    f"{game_name}: {review_data['user_name']} - {review_data['play_hours']} hours"
+                    f"{game_name}: {review_data['play_hours']} hours"
                 )
 
             except StaleElementReferenceException:
@@ -483,10 +461,6 @@ def run_batch_scrape(
                     'GameName': review.get('game_name'),
                     'Genre': review.get('genre'),
                     'Sentiment': review.get('sentiment'),
-                    'ReviewId': review.get('review_id'),
-                    'SteamId': review['steam_id'],
-                    'UserName': review['user_name'],
-                    'ProfileURL': review['profile_url'],
                     'ReviewText': review['review_content'],
                     'ReviewLength_Chars': review['review_length_chars'],
                     'ReviewLength_Words': review['review_length_words'],
@@ -496,7 +470,6 @@ def run_batch_scrape(
                     'PlayHours_Numeric': review['play_hours'],
                     'ReviewLanguage': review['review_language'],
                     'DatePosted': review['date_posted'],
-                    'ReviewURL': review['review_url'],
                     'OverallReviewSummary': review.get('overall_review_summary'),
                     'TotalReviewCount': review.get('total_review_count'),
                     'StoreTags': '|'.join(review.get('store_tags', [])) if review.get('store_tags') else '',
@@ -584,10 +557,6 @@ def save_to_csv(reviews, filename=DEFAULT_OUTPUT_FILE):
         'GameName',
         'Genre',
         'Sentiment',
-        'ReviewId',
-        'SteamId',
-        'UserName',
-        'ProfileURL',
         'ReviewText',
         'ReviewLength_Chars',
         'ReviewLength_Words',
@@ -597,7 +566,6 @@ def save_to_csv(reviews, filename=DEFAULT_OUTPUT_FILE):
         'PlayHours_Numeric',
         'ReviewLanguage',
         'DatePosted',
-        'ReviewURL',
         'OverallReviewSummary',
         'TotalReviewCount',
         'StoreTags',
@@ -619,10 +587,6 @@ def save_to_csv(reviews, filename=DEFAULT_OUTPUT_FILE):
                 'GameName': review.get('game_name'),
                 'Genre': review.get('genre'),
                 'Sentiment': review.get('sentiment'),
-                'ReviewId': review.get('review_id'),
-                'SteamId': review['steam_id'],
-                'UserName': review['user_name'],
-                'ProfileURL': review['profile_url'],
                 'ReviewText': review['review_content'],
                 'ReviewLength_Chars': review['review_length_chars'],
                 'ReviewLength_Words': review['review_length_words'],
@@ -632,7 +596,6 @@ def save_to_csv(reviews, filename=DEFAULT_OUTPUT_FILE):
                 'PlayHours_Numeric': review['play_hours'],
                 'ReviewLanguage': review['review_language'],
                 'DatePosted': review['date_posted'],
-                'ReviewURL': review['review_url'],
                 'OverallReviewSummary': review.get('overall_review_summary'),
                 'TotalReviewCount': review.get('total_review_count'),
                 'StoreTags': '|'.join(review.get('store_tags', [])) if review.get('store_tags') else '',
@@ -660,10 +623,6 @@ def main():
         'GameName',
         'Genre',
         'Sentiment',
-        'ReviewId',
-        'SteamId',
-        'UserName',
-        'ProfileURL',
         'ReviewText',
         'ReviewLength_Chars',
         'ReviewLength_Words',
@@ -673,7 +632,6 @@ def main():
         'PlayHours_Numeric',
         'ReviewLanguage',
         'DatePosted',
-        'ReviewURL',
         'OverallReviewSummary',
         'TotalReviewCount',
         'StoreTags',
