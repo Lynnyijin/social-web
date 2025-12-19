@@ -100,8 +100,7 @@ class ReviewFilteringHelper:
         df["DatePosted"] = df["DatePosted"].apply(cls.clean_date)
 
         columns_to_drop = [
-            "SteamId", "UserName", "ProfileURL", "ReviewURL",
-            "GameName", "ReviewId",
+            "GameName",
             "ReviewLength_Chars", "ReviewLength_Words",
             "PlayHours_Text", "ReviewLanguage",
             "OverallReviewSummary", "StoreTags"
